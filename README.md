@@ -15,6 +15,11 @@ YALIDINE_API_ID_URL = "https://api.yalidine.app/v1/"
 
 ```
 
+Install FastApi
+```bash
+pip install fastapi
+```
+
 Run the Api
 
 ```bash
