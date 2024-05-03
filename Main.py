@@ -1,15 +1,24 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import uvicorn
+from cachetools import TTLCache
 
 YALIDINE_API_ID = "Your Api Id "
 YALIDINE_API_ID_TOKEN = "Your Api Token"
 YALIDINE_API_ID_URL = "https://api.yalidine.app/v1/"
+# the cache have 24 hours (86400 seconds)
+Cache_Time = 86400
+Cache_Max_Size = 1
 
 Wilaya_Data = []
 Fees_Data = []
 Communes_Data = []
+
+# add 24h cache
+wilaya_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
+fees_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
+communes_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
 
 app = FastAPI()
 
@@ -79,16 +88,20 @@ def fetch_communes_data():
 
 @app.get("/api/wilaya")
 def wilaya():
-    fetch_wilaya_Data()
+    if not Wilaya_Data:
+        fetch_wilaya_Data()
     return Wilaya_Data
 
 @app.get("/api/fees")
 def fees():
-    fetch_fees_Data()
+    if not Fees_Data:
+        fetch_fees_Data()
     return Fees_Data
+
 @app.get("/api/communes")
 def communes():
-    fetch_communes_data()
+    if not Communes_Data:
+        fetch_communes_data()
     return Communes_Data
 
 if __name__ == "__main__":

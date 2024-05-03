@@ -72,6 +72,7 @@ Python Main.py
 ## Roadmap
 
 - **Add all API Reference**
+-  **~~Add Cach~~e** 
 
 
 
