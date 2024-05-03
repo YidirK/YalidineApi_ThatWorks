@@ -15,18 +15,15 @@ YALIDINE_API_ID_URL = "https://api.yalidine.app/v1/"
 
 ```
 
-Install FastApi
+Install FastApi,uvicorn,requests and cachetools
 
 ```bash
 pip install fastapi
-```
-
-Install uvicorn
-
-```bash
+pip install requests
 pip install "uvicorn[standard]"
-```
+pip install cachetools
 
+```
 
 Run the Api
 
