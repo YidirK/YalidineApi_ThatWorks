@@ -1,10 +1,12 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import uvicorn
 from cachetools import TTLCache
+import json
+from pydantic import BaseModel
 
-YALIDINE_API_ID = "Your Api Id "
+YALIDINE_API_ID = "Your Api Id"
 YALIDINE_API_ID_TOKEN = "Your Api Token"
 YALIDINE_API_ID_URL = "https://api.yalidine.app/v1/"
 # the cache have 24 hours (86400 seconds)
@@ -14,11 +16,13 @@ Cache_Max_Size = 1
 Wilaya_Data = []
 Fees_Data = []
 Communes_Data = []
+Centers_Data = []
 
 # add 24h cache
 wilaya_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
 fees_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
 communes_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
+centers_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
 
 app = FastAPI()
 
@@ -72,11 +76,11 @@ def fetch_communes_data():
         'X-API-TOKEN': YALIDINE_API_ID_TOKEN,
     }
     try:
-        response_page1 = requests.get(YALIDINE_API_ID_URL+"communes/?page=1&page_size=1900&is_deliverable=true",headers=headers)
+        response_page1 = requests.get(YALIDINE_API_ID_URL+"communes/?page=1&page_size=1900&is_deliverable=true", headers=headers)
         response_page1.raise_for_status()
         data_page1 = response_page1.json()["data"]
 
-        response_page2 = requests.get(YALIDINE_API_ID_URL+"communes/?page=2&page_size=1900&is_deliverable=true",headers=headers)
+        response_page2 = requests.get(YALIDINE_API_ID_URL+"communes/?page=2&page_size=1900&is_deliverable=true", headers=headers)
         response_page2.raise_for_status()
         data_page2 = response_page2.json()["data"]
 
@@ -85,7 +89,57 @@ def fetch_communes_data():
     except requests.exceptions.RequestException as e:
         print('Error fetching data', e)
 
+def fetch_centers_data():
+    global Centers_Data
+    headers={
+        'X-API-ID':YALIDINE_API_ID,
+        'X-API-TOKEN':YALIDINE_API_ID_TOKEN,
+    }
+    try:
+        response = requests.get(YALIDINE_API_ID_URL+"centers", headers=headers)
+        response.raise_for_status()
+        data = response.json()["data"]
+        Centers_Data = data
+    except requests.exceptions.RequestException as e:
+        print('Error fetching data', e)
 
+# Push parcel data  to Yalidine
+def create_parcels(data):
+    headers = {
+        'X-API-ID': YALIDINE_API_ID,
+        'X-API-TOKEN': YALIDINE_API_ID_TOKEN,
+    }
+    try:
+        response = requests.post(YALIDINE_API_ID_URL + "parcels", data=json.dumps(data), headers=headers)
+        if response.status_code != 200:
+            print("Eror" + response.text)
+        else :
+            return response.json()
+    except Exception as e:
+        print("Erreur lors de la création des colis :", e)
+
+class Parcel(BaseModel):
+    order_id: str
+    from_wilaya_name: str
+    firstname: str
+    familyname: str
+    contact_phone: str
+    address: str
+    to_commune_name: str
+    to_wilaya_name: str
+    product_list: str
+    price: float
+    do_insurance: bool
+    declared_value: float
+    height: float
+    width: float
+    length: float
+    weight: float
+    freeshipping: bool
+    is_stopdesk: bool
+    stopdesk_id: int
+    has_exchange: bool
+    product_to_collect: str = None
 @app.get("/api/wilaya")
 def wilaya():
     if not Wilaya_Data:
@@ -103,6 +157,20 @@ def communes():
     if not Communes_Data:
         fetch_communes_data()
     return Communes_Data
+@app.get("/api/centers")
+def centers():
+    if not Centers_Data:
+        fetch_centers_data()
+    return  Centers_Data
+
+@app.post("/api/parcel")
+def parcel(parcel: Parcel):
+    try:
+        data = parcel.dict()
+        create_parcels([data])
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8001)
