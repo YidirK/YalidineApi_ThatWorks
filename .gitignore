@@ -92,6 +92,7 @@ ipython_config.py
 
 # celery beat schedule file
 celerybeat-schedule
+config.json
 
 # SageMath parsed files
 *.sage.py
@@ -106,6 +107,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+./config.json
 
 # Spyder project settings
 .spyderproject

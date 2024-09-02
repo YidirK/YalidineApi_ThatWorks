@@ -7,7 +7,6 @@ from cachetools import TTLCache
 import json
 from pydantic import BaseModel
 
-
 __config = dict()
 try:
     with open("config.json", "r", encoding="utf-8") as _f:
@@ -15,21 +14,16 @@ try:
 except:
     exit(1)
 
-
-# the cache have 24 hours (86400 seconds)
+# cache
 Cache_Time = 86400
-Cache_Max_Size = 1
+Cache_Max_Size = 1000
+
+
+fees_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
 
 Wilaya_Data = []
-Fees_Data = []
 Communes_Data = []
 Centers_Data = []
-
-# add 24h cache
-wilaya_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
-fees_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
-communes_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
-centers_cache = TTLCache(maxsize=Cache_Max_Size, ttl=Cache_Time)
 
 app = FastAPI()
 
@@ -43,7 +37,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# fetch Wilaya Data from yalidine:
+
+# Fetch Wilaya Data from Yalidine
 def fetch_wilaya_Data():
     global Wilaya_Data
     headers = {
@@ -55,62 +50,83 @@ def fetch_wilaya_Data():
         response.raise_for_status()
         data = response.json()["data"]
         Wilaya_Data = data
-
     except requests.exceptions.RequestException as e:
         print('Error fetching data:', e)
 
-# fetch fees data from yalidine :
-def fetch_fees_Data():
-    global Fees_Data
+
+# Fetch Fees Data from Yalidine
+def fetch_fees_Data(from_wilaya_id: int, to_wilaya_id: int):
+    cache_key = f"{from_wilaya_id}-{to_wilaya_id}"
+
+
+    if cache_key in fees_cache:
+        print("Using cached data for:", cache_key)
+        return fees_cache[cache_key]
+
     headers = {
         'X-API-ID': __config["YALIDINE_API_ID"],
         'X-API-TOKEN': __config["YALIDINE_API_ID_TOKEN"],
     }
     try:
-        response = requests.get(__config["YALIDINE_API_ID_URL"] + "deliveryfees/", headers=headers)
+        response = requests.get(
+            f"{__config['YALIDINE_API_ID_URL']}fees/?from_wilaya_id={from_wilaya_id}&to_wilaya_id={to_wilaya_id}",
+            headers=headers
+        )
         response.raise_for_status()
-        data = response.json()["data"]
-        Fees_Data = data
+        data = response.json()
+        print("Full Response:", data)
 
+
+        if isinstance(data, dict):
+            fees_cache[cache_key] = data
+            return data
+        else:
+            print("Error: 'data' key not found in the response.")
+            return {"error": "Data not found in response"}
     except requests.exceptions.RequestException as e:
-        print('Error fetching data', e)
+        print('Error fetching data:', e)
+        return {"error": str(e)}
 
-# fetch communes data from yalidine
+
+# Fetch Communes Data from Yalidine
 def fetch_communes_data():
-    global  Communes_Data
+    global Communes_Data
     headers = {
         'X-API-ID': __config["YALIDINE_API_ID"],
         'X-API-TOKEN': __config["YALIDINE_API_ID_TOKEN"],
     }
     try:
-        response_page1 = requests.get(__config["YALIDINE_API_ID_URL"]+"communes/?page=1&page_size=1900&is_deliverable=true", headers=headers)
+        response_page1 = requests.get(
+            __config["YALIDINE_API_ID_URL"] + "communes/?page=1&page_size=1900&is_deliverable=true", headers=headers)
         response_page1.raise_for_status()
         data_page1 = response_page1.json()["data"]
 
-        response_page2 = requests.get(__config["YALIDINE_API_ID_URL"]+"communes/?page=2&page_size=1900&is_deliverable=true", headers=headers)
+        response_page2 = requests.get(
+            __config["YALIDINE_API_ID_URL"] + "communes/?page=2&page_size=1900&is_deliverable=true", headers=headers)
         response_page2.raise_for_status()
         data_page2 = response_page2.json()["data"]
 
         Communes_Data = data_page1 + data_page2
-
     except requests.exceptions.RequestException as e:
         print('Error fetching data', e)
 
+# Fetch centers Data from Yalidine
 def fetch_centers_data():
     global Centers_Data
-    headers={
-        'X-API-ID':__config["YALIDINE_API_ID"],
-        'X-API-TOKEN':__config["YALIDINE_API_ID_TOKEN"],
+    headers = {
+        'X-API-ID': __config["YALIDINE_API_ID"],
+        'X-API-TOKEN': __config["YALIDINE_API_ID_TOKEN"],
     }
     try:
-        response = requests.get(__config["YALIDINE_API_ID_URL"]+"centers", headers=headers)
+        response = requests.get(__config["YALIDINE_API_ID_URL"] + "centers", headers=headers)
         response.raise_for_status()
         data = response.json()["data"]
         Centers_Data = data
     except requests.exceptions.RequestException as e:
         print('Error fetching data', e)
 
-# Push parcel data  to Yalidine
+
+# Push parcel data to Yalidine
 def create_parcels(data):
     headers = {
         'X-API-ID': __config["YALIDINE_API_ID"],
@@ -119,11 +135,11 @@ def create_parcels(data):
     try:
         response = requests.post(__config["YALIDINE_API_ID_URL"] + "parcels", data=json.dumps(data), headers=headers)
         if response.status_code != 200:
-            print("Eror" + response.text)
-        else :
+            print("Error" + response.text)
+        else:
             return response.json()
     except Exception as e:
-        print("Erreur lors de la création des colis :", e)
+        print("Error creating parcels:", e)
 
 
 class Parcel(BaseModel):
@@ -148,28 +164,33 @@ class Parcel(BaseModel):
     stopdesk_id: int
     has_exchange: bool
     product_to_collect: str = None
+
+
 @app.get("/api/wilaya")
 def wilaya():
     if not Wilaya_Data:
         fetch_wilaya_Data()
     return Wilaya_Data
 
+
 @app.get("/api/fees")
-def fees():
-    if not Fees_Data:
-        fetch_fees_Data()
-    return Fees_Data
+def fees(from_wilaya_id: int, to_wilaya_id: int):
+    return fetch_fees_Data(from_wilaya_id, to_wilaya_id)
+
 
 @app.get("/api/communes")
 def communes():
     if not Communes_Data:
         fetch_communes_data()
     return Communes_Data
+
+
 @app.get("/api/centers")
 def centers():
     if not Centers_Data:
         fetch_centers_data()
-    return  Centers_Data
+    return Centers_Data
+
 
 @app.post("/api/parcel")
 def parcel(parcel: Parcel):
@@ -183,9 +204,9 @@ def parcel(parcel: Parcel):
 if __name__ == "__main__":
     uvicorn.run(
         app,
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=__config["server_port"],
-        ssl_keyfile="./key.pem",
-        ssl_certfile="./cert.pem"
+        # Uncomment the lines below to enable SSL with a certificate obtained using Certbot
+        # ssl_keyfile="./key.pem",
+        # ssl_certfile="./cert.pem"
     )
-
